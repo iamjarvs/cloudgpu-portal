@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>HeliosGrid Ops — Docs</title>
+<style>
+  :root { color-scheme: dark; }
+  body { background: #050505; color: #e5e7eb; font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif; margin: 0; padding: 2rem; line-height: 1.55; }
+  .wrap { max-width: 760px; margin: 0 auto; }
+  h1 { color: #FF3B69; font-size: 1.4rem; }
+  h2 { color: #FF3B69; font-size: 1.05rem; margin-top: 2.2rem; border-bottom: 1px solid #1f2937; padding-bottom: 0.4rem; }
+  nav a { color: #9ca3af; text-decoration: none; font-size: 0.85rem; margin-right: 1rem; }
+  nav a:hover { color: #FF3B69; }
+  code, .mono { font-family: 'JetBrains Mono', monospace; font-size: 0.85em; background: #111827; padding: 0.1em 0.4em; border-radius: 4px; }
+  ul { padding-left: 1.2rem; }
+  li { margin-bottom: 0.4rem; }
+  .callout { border: 1px solid #374151; border-radius: 8px; padding: 0.9rem 1.1rem; margin: 1rem 0; background: #0b0f17; font-size: 0.9rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav><a href="/ops">Settings</a><a href="/ops/docs">Docs</a></nav>
+  <h1>HeliosGrid — What this is, and how to drive it</h1>
+
+  <p>This is a sales/demo tool: a fake "Neo Cloud" GPU hosting provider's self-service
+  customer portal. The customer-facing app is a scripted illusion — a fake login,
+  a fake tenant ("HackMeCorp" by default), and a fake bare-metal/Kubernetes provisioning
+  animation. The <strong>only real thing underneath</strong> is the Netris SDN controller
+  integration: creating an environment really does create a real isolated network
+  (VPC/VLAN/subnets) across real bare-metal servers on the configured Netris controller.</p>
+
+  <h2>The two logins</h2>
+  <ul>
+    <li><strong>Customer session</strong> (what gets demoed) — signs into the main portal
+      as the fake tenant. Credentials live under "Customer portal login" on the
+      <a href="/ops">Settings</a> page. This is a self-service persona, not an admin role.</li>
+    <li><strong>This operator surface</strong> (<code>/ops</code>) — HTTP Basic Auth, a
+      completely different credential pair ("Operator login" on Settings). The customer
+      session can never reach this, even by guessing the URL.</li>
+  </ul>
+
+  <h2>Settings reference</h2>
+  <ul>
+    <li><strong>Netris base URL / username / password</strong> — the controller this tool
+      drives (e.g. <code>https://adam-ctl.netris.io</code>) and an account with permission
+      to create/delete server-clusters there.</li>
+    <li><strong>Verify TLS certificate</strong> — leave unchecked if the controller uses a
+      self-signed cert (matches <code>curl -k</code> in the reference auth script). Changing
+      this needs an app restart to take effect on the live connection (Test Connection above
+      it honors the checkbox immediately, before you save).</li>
+    <li><strong>Site ID / name</strong> — which Netris site new environments are built at.
+      ID is what's actually sent to Netris; name is only used for display and as a
+      sanity-check in Test Connection (it'll warn you if the ID doesn't resolve to the
+      name you typed — catches a typo'd ID before it silently targets the wrong site).</li>
+    <li><strong>Template ID / name</strong> — the <code>srvClusterTemplate</code> every new
+      environment is created against.</li>
+    <li><strong>GPUs per server</strong> — display-only multiplier (servers × this = total
+      GPUs shown to the customer persona). Netris only ever allocates whole servers.</li>
+    <li><strong>Max GPU servers per request</strong> — a hard cap enforced server-side, mainly
+      a guardrail in case the configured site/template is ever shared with anything else.</li>
+    <li><strong>Fake tenant display name</strong> — the company name shown throughout the
+      customer-facing app (default "HackMeCorp").</li>
+    <li><strong>SSH jump host / port / username / password</strong> — the box this tool SSHes
+      through to reach the lab's bare-metal fleet (see below). Individual devices
+      (<code>hgx-podNN-suX-hYY</code>) are only reachable via bash aliases defined in that
+      jump host's own <code>~/.bash_aliases</code>, not by hostname directly — this tool
+      resolves that alias table itself on every use, so it stays correct even if devices are
+      added/changed later, and needs no separate per-device configuration here.</li>
+    <li><strong>Demo webpage port</strong> — the port the fake training-job monitor listens on
+      on each server (default 8080).</li>
+  </ul>
+
+  <h2>The training-job monitor prop &amp; connectivity test</h2>
+  <p>Two things happen over that same SSH path, entirely invisible to the customer persona:</p>
+  <ul>
+    <li>The moment a real environment reaches <span class="mono">active</span>, this tool
+      silently installs a small fake "training job monitor" webpage (simulated pod
+      utilization, no real telemetry) on every one of its servers, as a <span class="mono">
+      systemd</span> unit named <code>heliosgrid-demo</code> serving on the configured demo
+      port. Pull it up directly (e.g. <code>http://&lt;device-ip&gt;:8080</code>, or via the
+      jump host) as a prop in your own demos — it's never linked from the customer-facing app.</li>
+    <li>When that environment is terminated, the same webpage is silently removed. Both the
+      install and removal are best-effort and non-blocking: a failure here never affects the
+      environment's own status, and is only visible in this server's own logs
+      (<code>journalctl</code>), never in the customer-facing Activity log.</li>
+  </ul>
+  <p>Separately, the customer-facing <strong>Test Connectivity</strong> button (on a real
+  environment's detail page) genuinely SSHes into each of its servers and runs the lab's own
+  <code>cluster-ping.sh</code> against every other server in that same environment, showing
+  the real output. Unlike the webpage prop above, failures here <em>do</em> surface to the
+  customer persona — it's a deliberate, on-demand action they triggered.</p>
+
+  <h2>How a demo run works</h2>
+  <p>Creating an environment kicks off two things at once: a fake, staged compute
+  animation (~60–120s: allocate → K8s control plane → worker nodes/drivers → storage →
+  network fabric → finalize) and the real Netris flow (pick available servers at the
+  configured site → create the server-cluster → poll until active).</p>
+  <div class="callout">
+    <strong>Netris is always the authoritative gate.</strong> The environment only goes
+    <span class="mono">active</span> once <em>both</em> sides finish. If the fake animation
+    finishes first, you'll see <span class="mono">awaiting_network</span> — normal, just
+    means Netris hasn't confirmed yet. If Netris takes a very long time (20+ minutes), you'll
+    see <span class="mono">stalled</span> — still not a failure, it just means the poll
+    cadence has slowed down while it keeps waiting. It does not time out on its own.
+  </div>
+
+  <h2>Terminate / delete</h2>
+  <ul>
+    <li><strong>Dummy environments</strong> (the permanently-seeded demo ones) — deleting is
+      purely cosmetic, no Netris call is ever made.</li>
+    <li><strong>Real environments</strong> — deleting calls Netris's delete endpoint
+      (<code>DELETE /api/v2/server-cluster/{id}</code>, verified against the live controller).
+      If it ever fails, the environment shows <span class="mono">delete_failed</span> with a
+      warning and a <strong>Retry</strong> action — a <strong>Dismiss</strong> action is also
+      available to force it off the dashboard, but that never claims the real infra was
+      actually torn down; check Netris directly if you use it.</li>
+  </ul>
+
+  <h2>Troubleshooting</h2>
+  <ul>
+    <li>An environment stuck or failed: open its detail page in the customer app for the
+      staged timeline, or hit <code class="mono">/api/environments/{uuid}/events</code> while
+      logged in as the customer for the full raw audit trail.</li>
+    <li>Netris misconfigured: use <strong>Test Connection</strong> on the Settings page above —
+      it checks login, and cross-checks the site ID actually resolves to the site name you
+      expect.</li>
+    <li>Nothing loads / 500s: <code class="mono">journalctl -u &lt;service-name&gt; -n 100</code>
+      on the server.</li>
+  </ul>
+
+  <h2>Redeploying</h2>
+  <p>Standard <code>web-app-deploy</code>-style restart script refreshes the Python venv and
+  restarts uvicorn — but this app also has a React frontend that needs
+  <code>npm run build</code> re-run before restarting, or a code change to the UI won't show up.
+  Check <code>restart.sh</code> on the server does both steps.</p>
+</div>
+</body>
+</html>

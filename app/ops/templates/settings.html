@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>HeliosGrid Ops — Settings</title>
+<style>
+  :root { color-scheme: dark; }
+  body { background: #050505; color: #e5e7eb; font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif; margin: 0; padding: 2rem; }
+  .wrap { max-width: 760px; margin: 0 auto; }
+  h1 { color: #FF3B69; font-size: 1.4rem; margin-bottom: 0.25rem; }
+  .sub { color: #9ca3af; margin-top: 0; margin-bottom: 2rem; font-size: 0.9rem; }
+  nav a { color: #9ca3af; text-decoration: none; font-size: 0.85rem; margin-right: 1rem; }
+  nav a:hover { color: #FF3B69; }
+  fieldset { border: 1px solid #1f2937; border-radius: 10px; margin-bottom: 1.5rem; padding: 1.25rem 1.5rem; }
+  legend { color: #FF3B69; font-weight: 600; padding: 0 0.5rem; font-size: 0.95rem; }
+  label { display: block; font-size: 0.82rem; color: #9ca3af; margin-top: 0.85rem; margin-bottom: 0.25rem; }
+  input[type=text], input[type=number], input[type=password] {
+    width: 100%; box-sizing: border-box; background: #111827; border: 1px solid #1f2937; border-radius: 6px;
+    color: #e5e7eb; padding: 0.5rem 0.6rem; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem;
+  }
+  .checkbox-row { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.85rem; }
+  .checkbox-row input { width: auto; }
+  .checkbox-row label { margin: 0; }
+  .hint { color: #6b7280; font-size: 0.75rem; margin-top: 0.25rem; }
+  button {
+    background: #FF3B69; color: #050505; border: none; border-radius: 6px; padding: 0.55rem 1.1rem;
+    font-weight: 600; cursor: pointer; font-size: 0.85rem; margin-right: 0.5rem;
+  }
+  button.secondary { background: transparent; color: #e5e7eb; border: 1px solid #374151; }
+  #result { margin-top: 1rem; padding: 0.75rem 1rem; border-radius: 6px; font-size: 0.85rem; display: none; }
+  #result.ok { display: block; background: #052e1a; border: 1px solid #76B900; color: #a3e635; }
+  #result.err { display: block; background: #2e0512; border: 1px solid #FF3B69; color: #fca5a5; }
+  .actions { margin-top: 1.5rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav><a href="/ops">Settings</a><a href="/ops/docs">Docs</a></nav>
+  <h1>HeliosGrid — Operator Settings</h1>
+  <p class="sub">Hidden from the customer portal entirely. Changes here take effect immediately — no redeploy needed.</p>
+
+  <form id="settings-form">
+    <fieldset>
+      <legend>Netris controller</legend>
+      <label for="netris_base_url">Base URL</label>
+      <input type="text" id="netris_base_url" placeholder="https://adam-ctl.netris.io">
+
+      <label for="netris_username">Username</label>
+      <input type="text" id="netris_username">
+
+      <label for="netris_password">Password <span class="hint" id="pw-hint"></span></label>
+      <input type="password" id="netris_password" placeholder="Leave blank to keep the current password">
+
+      <div class="checkbox-row">
+        <input type="checkbox" id="netris_verify_ssl">
+        <label for="netris_verify_ssl">Verify TLS certificate (uncheck if the controller uses a self-signed cert — matches its behavior each time it's tested here; the running app process only picks up a change to this after a restart)</label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Site &amp; template</legend>
+      <label for="netris_site_id">Site ID</label>
+      <input type="number" id="netris_site_id">
+      <label for="netris_site_name">Site name (for display / sanity-check only)</label>
+      <input type="text" id="netris_site_name">
+
+      <label for="netris_template_id">Server-cluster template ID</label>
+      <input type="number" id="netris_template_id">
+      <label for="netris_template_name">Template name (for display only)</label>
+      <input type="text" id="netris_template_name">
+
+      <div class="actions">
+        <button type="button" id="test-btn" class="secondary">Test connection</button>
+      </div>
+      <div id="result"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Demo tuning</legend>
+      <label for="gpus_per_server">GPUs per server</label>
+      <input type="number" id="gpus_per_server">
+      <label for="max_servers_per_request">Max GPU servers per environment request</label>
+      <input type="number" id="max_servers_per_request">
+      <label for="tenant_display_name">Fake tenant display name (shown to the customer persona)</label>
+      <input type="text" id="tenant_display_name">
+    </fieldset>
+
+    <fieldset>
+      <legend>SSH access (training-viz prop + connectivity test)</legend>
+      <p class="hint">Used to silently install/remove the fake training-job webpage on each environment's servers,
+        and to power the customer-facing "Test Connectivity" action. Invisible to the customer persona either way.</p>
+      <label for="ssh_jump_host">Jump host</label>
+      <input type="text" id="ssh_jump_host" placeholder="adam-ctl.netris.io">
+      <label for="ssh_jump_port">Port</label>
+      <input type="number" id="ssh_jump_port">
+      <label for="ssh_jump_username">Username</label>
+      <input type="text" id="ssh_jump_username">
+      <label for="ssh_jump_password">Password <span class="hint" id="ssh-pw-hint"></span></label>
+      <input type="password" id="ssh_jump_password" placeholder="Leave blank to keep the current password">
+      <label for="demo_app_port">Demo webpage port (on each server)</label>
+      <input type="number" id="demo_app_port">
+      <div class="actions">
+        <button type="button" id="test-ssh-btn" class="secondary">Test SSH connection</button>
+      </div>
+      <div id="ssh-result"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Customer portal login</legend>
+      <p class="hint">What the demo audience signs in with. Not the same as this operator login.</p>
+      <label for="customer_username">Username</label>
+      <input type="text" id="customer_username">
+      <label for="customer_password">Password</label>
+      <input type="password" id="customer_password" placeholder="Leave blank to keep the current password">
+    </fieldset>
+
+    <fieldset>
+      <legend>Operator login (this page)</legend>
+      <label for="operator_username">Username</label>
+      <input type="text" id="operator_username">
+      <label for="operator_password">Password</label>
+      <input type="password" id="operator_password" placeholder="Leave blank to keep the current password">
+      <p class="hint">Changing this takes effect immediately — your browser will re-prompt for Basic Auth next request.</p>
+    </fieldset>
+
+    <div class="actions">
+      <button type="submit">Save settings</button>
+    </div>
+  </form>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+async function loadSettings() {
+  const res = await fetch('/ops/api/settings');
+  const s = await res.json();
+  $('netris_base_url').value = s.netris_base_url || '';
+  $('netris_username').value = s.netris_username || '';
+  $('pw-hint').textContent = s.netris_password_set ? '(currently set)' : '(not set yet)';
+  $('netris_verify_ssl').checked = !!s.netris_verify_ssl;
+  $('netris_site_id').value = s.netris_site_id ?? '';
+  $('netris_site_name').value = s.netris_site_name || '';
+  $('netris_template_id').value = s.netris_template_id ?? '';
+  $('netris_template_name').value = s.netris_template_name || '';
+  $('gpus_per_server').value = s.gpus_per_server;
+  $('max_servers_per_request').value = s.max_servers_per_request;
+  $('tenant_display_name').value = s.tenant_display_name || '';
+  $('customer_username').value = s.customer_username || '';
+  $('operator_username').value = s.operator_username || '';
+  $('ssh_jump_host').value = s.ssh_jump_host || '';
+  $('ssh_jump_port').value = s.ssh_jump_port ?? 22;
+  $('ssh_jump_username').value = s.ssh_jump_username || '';
+  $('ssh-pw-hint').textContent = s.ssh_jump_password_set ? '(currently set)' : '(not set yet)';
+  $('demo_app_port').value = s.demo_app_port ?? 8080;
+}
+
+function showResult(ok, message, elId = 'result') {
+  const el = $(elId);
+  el.className = ok ? 'ok' : 'err';
+  el.textContent = message;
+}
+
+$('test-btn').addEventListener('click', async () => {
+  showResult(true, 'Testing…');
+  const body = {
+    netris_base_url: $('netris_base_url').value,
+    netris_username: $('netris_username').value,
+    netris_password: $('netris_password').value || null,
+    netris_site_id: parseInt($('netris_site_id').value || '0', 10),
+    netris_site_name: $('netris_site_name').value,
+    netris_verify_ssl: $('netris_verify_ssl').checked,
+  };
+  const res = await fetch('/ops/api/settings/test-netris-connection', {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  showResult(data.ok, data.message);
+});
+
+$('test-ssh-btn').addEventListener('click', async () => {
+  showResult(true, 'Testing…', 'ssh-result');
+  const body = {
+    ssh_jump_host: $('ssh_jump_host').value,
+    ssh_jump_port: parseInt($('ssh_jump_port').value || '22', 10),
+    ssh_jump_username: $('ssh_jump_username').value,
+    ssh_jump_password: $('ssh_jump_password').value || null,
+  };
+  const res = await fetch('/ops/api/settings/test-ssh-connection', {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  showResult(data.ok, data.message, 'ssh-result');
+});
+
+$('settings-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const payload = {
+    netris_base_url: $('netris_base_url').value || null,
+    netris_username: $('netris_username').value || null,
+    netris_password: $('netris_password').value || null,
+    netris_site_id: $('netris_site_id').value ? parseInt($('netris_site_id').value, 10) : null,
+    netris_site_name: $('netris_site_name').value || null,
+    netris_template_id: $('netris_template_id').value ? parseInt($('netris_template_id').value, 10) : null,
+    netris_template_name: $('netris_template_name').value || null,
+    netris_verify_ssl: $('netris_verify_ssl').checked,
+    gpus_per_server: $('gpus_per_server').value ? parseInt($('gpus_per_server').value, 10) : null,
+    max_servers_per_request: $('max_servers_per_request').value ? parseInt($('max_servers_per_request').value, 10) : null,
+    tenant_display_name: $('tenant_display_name').value || null,
+    customer_username: $('customer_username').value || null,
+    customer_password: $('customer_password').value || null,
+    operator_username: $('operator_username').value || null,
+    operator_password: $('operator_password').value || null,
+    ssh_jump_host: $('ssh_jump_host').value || null,
+    ssh_jump_port: $('ssh_jump_port').value ? parseInt($('ssh_jump_port').value, 10) : null,
+    ssh_jump_username: $('ssh_jump_username').value || null,
+    ssh_jump_password: $('ssh_jump_password').value || null,
+    demo_app_port: $('demo_app_port').value ? parseInt($('demo_app_port').value, 10) : null,
+  };
+  const res = await fetch('/ops/api/settings', {
+    method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload),
+  });
+  if (res.ok) {
+    showResult(true, 'Saved.');
+    $('netris_password').value = '';
+    $('customer_password').value = '';
+    $('operator_password').value = '';
+    $('ssh_jump_password').value = '';
+    loadSettings();
+  } else {
+    const data = await res.json().catch(() => ({}));
+    showResult(false, 'Save failed: ' + (data.detail || res.status));
+  }
+});
+
+loadSettings();
+</script>
+</body>
+</html>

@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Training Job Monitor — {{HOSTNAME}}</title>
+<style>
+  :root {
+    --coral: #FF3B69; --purple: #8B5CF6; --green: #4D8B00; --amber: #C2870A;
+    --bg: #05060A; --surface: #10131C; --border: #232838; --text: #E5E7EB; --text-dim: #8A93A6;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding: 2rem;
+  }
+  .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.6rem; flex-wrap: wrap; gap: 0.8rem; }
+  .brand { display: flex; align-items: center; gap: 0.6rem; font-weight: 800; letter-spacing: 0.04em; font-size: 1.05rem; }
+  .brand svg { flex-shrink: 0; }
+  .host { color: var(--text-dim); font-size: 0.85rem; font-family: ui-monospace, "JetBrains Mono", monospace; }
+  .live { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.04em; color: var(--green); }
+  .live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); animation: pulse 1.4s infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+  .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; margin-bottom: 1.6rem; }
+  .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1rem 1.2rem; }
+  .stat-value { font-size: 1.5rem; font-weight: 700; }
+  .stat-label { font-size: 0.72rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.03em; margin-top: 0.2rem; }
+
+  .pod-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem; }
+  .pod {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.1rem;
+    display: flex; flex-direction: column; gap: 0.7rem;
+  }
+  .pod-head { display: flex; align-items: center; justify-content: space-between; }
+  .pod-name { font-weight: 700; font-size: 0.92rem; }
+  .pod-state { font-size: 0.68rem; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; padding: 0.15rem 0.5rem; border-radius: 999px; }
+  .pod-state.training { background: rgba(255,59,105,0.15); color: var(--coral); }
+  .pod-state.idle { background: rgba(138,147,166,0.15); color: var(--text-dim); }
+
+  .pod-util-row { display: flex; align-items: center; justify-content: space-between; font-size: 0.78rem; color: var(--text-dim); }
+  .pod-util-value { font-weight: 700; color: var(--text); }
+  .pod-bar { height: 7px; border-radius: 999px; background: #1B2030; overflow: hidden; }
+  .pod-bar-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--coral), var(--purple)); transition: width 0.5s ease; }
+
+  .pod-foot { display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--text-dim); font-family: ui-monospace, "JetBrains Mono", monospace; }
+
+  footer { margin-top: 2rem; text-align: center; color: var(--text-dim); font-size: 0.72rem; }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">
+      <svg width="22" height="22" viewBox="0 0 100 100"><polygon points="50,5 90,27 90,73 50,95 10,73 10,27" fill="#FF3B69"/><polygon points="50,25 72,37 72,63 50,75 28,63 28,37" fill="#05060A"/></svg>
+      HELIOSGRID <span style="font-weight:400;color:var(--text-dim);">/ Training Job Monitor</span>
+    </div>
+    <div style="display:flex; align-items:center; gap:1rem;">
+      <span class="host">{{HOSTNAME}}</span>
+      <span class="live"><span class="live-dot"></span>LIVE</span>
+    </div>
+  </div>
+
+  <div class="summary">
+    <div class="stat"><div class="stat-value" id="stat-jobs">–</div><div class="stat-label">Active training jobs</div></div>
+    <div class="stat"><div class="stat-value" id="stat-util">–</div><div class="stat-label">Avg GPU utilization</div></div>
+    <div class="stat"><div class="stat-value" id="stat-throughput">–</div><div class="stat-label">Samples / sec</div></div>
+    <div class="stat"><div class="stat-value" id="stat-temp">–</div><div class="stat-label">Avg GPU temp</div></div>
+  </div>
+
+  <div class="pod-grid" id="pod-grid"></div>
+
+  <footer>Simulated telemetry for demonstration purposes only.</footer>
+
+<script>
+const NUM_PODS = 8;
+const JOB_NAMES = ['llama3-70b-sft', 'diffusion-xl-ft', 'vit-l-pretrain', 'rlhf-reward-model', 'moe-8x7b-train', 'whisper-v3-ft'];
+
+function hashSeed(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = (Math.imul(31, h) + str.charCodeAt(i)) | 0;
+  return h;
+}
+const seed = hashSeed('{{HOSTNAME}}');
+
+function rand(min, max, offset) {
+  const t = Date.now() / 1000 * 0.15 + offset;
+  const wave = (Math.sin(t) + 1) / 2;
+  const wobble = Math.sin(t * 2.7 + seed) * 0.12;
+  return Math.round((wave + wobble) * (max - min) + min);
+}
+
+const grid = document.getElementById('pod-grid');
+const pods = [];
+for (let i = 0; i < NUM_PODS; i++) {
+  const el = document.createElement('div');
+  el.className = 'pod';
+  el.innerHTML = `
+    <div class="pod-head">
+      <span class="pod-name">gpu-${i}</span>
+      <span class="pod-state training" id="pod-state-${i}">Training</span>
+    </div>
+    <div class="pod-util-row"><span>Utilization</span><span class="pod-util-value" id="pod-util-${i}">–%</span></div>
+    <div class="pod-bar"><div class="pod-bar-fill" id="pod-bar-${i}" style="width:0%"></div></div>
+    <div class="pod-foot"><span id="pod-job-${i}"></span><span id="pod-mem-${i}"></span></div>
+  `;
+  grid.appendChild(el);
+  pods.push({ idle: i === NUM_PODS - 1, job: JOB_NAMES[i % JOB_NAMES.length] });
+}
+
+function tick() {
+  let totalUtil = 0;
+  pods.forEach((pod, i) => {
+    const util = pod.idle ? rand(2, 8, i) : rand(55, 96, i);
+    totalUtil += util;
+    document.getElementById(`pod-util-${i}`).textContent = util + '%';
+    document.getElementById(`pod-bar-${i}`).style.width = util + '%';
+    document.getElementById(`pod-state-${i}`).textContent = pod.idle ? 'Idle' : 'Training';
+    document.getElementById(`pod-state-${i}`).className = 'pod-state ' + (pod.idle ? 'idle' : 'training');
+    document.getElementById(`pod-job-${i}`).textContent = pod.idle ? '—' : pod.job;
+    document.getElementById(`pod-mem-${i}`).textContent = pod.idle ? '' : rand(40, 78, i + 10) + 'GB/80GB';
+  });
+
+  document.getElementById('stat-jobs').textContent = pods.filter(p => !p.idle).length;
+  document.getElementById('stat-util').textContent = Math.round(totalUtil / pods.length) + '%';
+  document.getElementById('stat-throughput').textContent = rand(1800, 4200, 99).toLocaleString();
+  document.getElementById('stat-temp').textContent = rand(58, 74, 55) + '°C';
+}
+
+tick();
+setInterval(tick, 2000);
+</script>
+</body>
+</html>

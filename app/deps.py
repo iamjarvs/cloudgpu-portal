@@ -1,0 +1,8 @@
+from __future__ import annotations
+
+from fastapi import HTTPException, Request
+
+
+def require_customer_session(request: Request) -> None:
+    if not request.session.get("authenticated"):
+        raise HTTPException(status_code=401, detail="Not authenticated")
