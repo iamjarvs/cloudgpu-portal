@@ -130,7 +130,7 @@ def _fake_extras(d: dict) -> dict:
         {
             "action": "permit", "proto": "tcp",
             "src_prefix": "0.0.0.0/0", "dst_prefix": f"{d['prefix_ns']}",
-            "src_port_from": None, "src_port_to": None,
+            "src_port_from": 1, "src_port_to": 65000,
             "dst_port_from": 443, "dst_port_to": 443,
             "comment": "Seeded demo rule",
         },

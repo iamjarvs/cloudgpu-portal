@@ -216,7 +216,9 @@ async def create_now(environment_id: int, kind: str, local_id: str, client: Netr
                 name=cfg["name"], vpc_id=vpc_id, vpc_name=vpc_name, comment=cfg.get("comment", ""),
                 action=cfg.get("action", "permit"), proto=cfg.get("proto", "tcp"),
                 src_prefix=cfg.get("src_prefix", "0.0.0.0/0"), dst_prefix=dst_prefix,
-                src_port_from=cfg.get("src_port_from"), src_port_to=cfg.get("src_port_to"),
+                # Despite the API schema marking these nullable, Netris rejects
+                # an ACL with no source port range — default to the full range.
+                src_port_from=cfg.get("src_port_from") or 1, src_port_to=cfg.get("src_port_to") or 65000,
                 dst_port_from=cfg.get("dst_port_from"), dst_port_to=cfg.get("dst_port_to"),
                 established=cfg.get("established", 1), reverse=cfg.get("reverse", "yes"),
                 environment_id=environment_id,
