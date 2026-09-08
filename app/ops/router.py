@@ -11,7 +11,7 @@ from pathlib import Path
 
 import asyncssh
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
@@ -112,14 +112,8 @@ def get_settings_api(_: None = Depends(require_operator)):
     }
 
 
-
-# Fields that change *which account* the shared NetrisClient is
-# authenticated as — see NetrisClient.invalidate_session.
-_NETRIS_SESSION_FIELDS = {"netris_base_url", "netris_username", "netris_password", "netris_verify_ssl"}
-
-
 @router.get("/api/device-credentials")
-def device_credentials(request: Request, _: None = Depends(require_operator)):
+def device_credentials_api(request: Request, response: Response, _: None = Depends(require_operator)):
     """Plaintext Netris + SSH jump-host credentials, for bootstrapping the
     Meridian demo console onto a compute host at install time. Unlike
     /api/settings above, this intentionally returns decrypted secrets — the
@@ -128,7 +122,12 @@ def device_credentials(request: Request, _: None = Depends(require_operator)):
     proxying every lookup back through this Portal at runtime. Gated by the
     same operator Basic Auth as everything else under /ops; there is no
     narrower credential for this on purpose (see the device-console plan).
+
+    Includes netris_configured/ssh_configured (same semantics as
+    /api/settings) rather than just silently returning null passwords, so
+    install.sh can tell "nothing set up yet" apart from a real value.
     """
+    response.headers["Cache-Control"] = "no-store"
     settings = settings_store.get_settings()
     secret_box = request.app.state.secret_box
     netris_password = (
@@ -146,13 +145,20 @@ def device_credentials(request: Request, _: None = Depends(require_operator)):
         "netris_username": settings.netris_username,
         "netris_password": netris_password,
         "netris_verify_ssl": bool(settings.netris_verify_ssl),
+        "netris_configured": settings.netris_configured,
         "ssh_jump_host": settings.ssh_jump_host,
         "ssh_jump_port": settings.ssh_jump_port,
         "ssh_jump_username": settings.ssh_jump_username,
         "ssh_jump_password": ssh_jump_password,
+        "ssh_configured": settings.ssh_configured,
         "tenant_display_name": settings.tenant_display_name,
         "gpus_per_server": settings.gpus_per_server,
     }
+
+
+# Fields that change *which account* the shared NetrisClient is
+# authenticated as — see NetrisClient.invalidate_session.
+_NETRIS_SESSION_FIELDS = {"netris_base_url", "netris_username", "netris_password", "netris_verify_ssl"}
 
 
 @router.put("/api/settings")
