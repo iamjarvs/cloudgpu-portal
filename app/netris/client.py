@@ -357,7 +357,8 @@ class NetrisClient:
         src_port_to: int | None = None,
         dst_port_from: int | None = None,
         dst_port_to: int | None = None,
-        established: int = 0,
+        established: int = 1,
+        reverse: str = "yes",
         environment_id: int | None = None,
     ) -> int:
         body = {
@@ -375,7 +376,7 @@ class NetrisClient:
             "dst_port_to": dst_port_to,
             "dst_port_group": None,
             "established": established,
-            "reverse": "no",
+            "reverse": reverse,
         }
         resp = await self._request(
             "POST", "/api/acl", environment_id=environment_id, action="Create ACL rule", json=body

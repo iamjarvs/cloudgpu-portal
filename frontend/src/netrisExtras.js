@@ -43,11 +43,13 @@ export function defaultConfig(kind, envName) {
         action: 'permit',
         proto: 'tcp',
         src_prefix: '0.0.0.0/0',
-        dst_prefix: '0.0.0.0/0',
+        dst_prefix: '',
         src_port_from: null,
         src_port_to: null,
         dst_port_from: 443,
         dst_port_to: 443,
+        established: 1,
+        reverse: 'yes',
         comment: '',
       }
     case 'vnet':
@@ -95,7 +97,12 @@ export const FIELD_SPECS = {
     { key: 'action', label: 'Action', type: 'select', options: ['permit', 'deny'] },
     { key: 'proto', label: 'Protocol', type: 'select', options: ['tcp', 'udp', 'icmp', 'all'] },
     { key: 'src_prefix', label: 'Source prefix', type: 'text' },
-    { key: 'dst_prefix', label: 'Destination prefix', type: 'text' },
+    {
+      key: 'dst_prefix',
+      label: 'Destination prefix',
+      type: 'text',
+      placeholder: "Leave blank to use this environment's own subnet",
+    },
     { key: 'dst_port_from', label: 'Dest port from', type: 'number' },
     { key: 'dst_port_to', label: 'Dest port to', type: 'number' },
     { key: 'comment', label: 'Comment', type: 'text' },
@@ -122,7 +129,7 @@ export function summarize(kind, config) {
     case 'nat':
       return `${config.action} ${config.protocol} ${config.destinationAddress || ''} → ${config.dnatToIP || ''}`
     case 'acl':
-      return `${config.action} ${config.proto} ${config.src_prefix} → ${config.dst_prefix}${config.dst_port_from ? ':' + config.dst_port_from : ''}`
+      return `${config.action} ${config.proto} ${config.src_prefix} → ${config.dst_prefix || "(this env's subnet)"}${config.dst_port_from ? ':' + config.dst_port_from : ''}`
     case 'vnet':
       return `VLAN ${config.vlan}, ${config.ipFamily}`
     case 'lb':

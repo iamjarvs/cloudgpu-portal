@@ -15,6 +15,7 @@ dummy-environments-are-cosmetic-only convention (app/seed.py, delete_flow.py).
 """
 from __future__ import annotations
 
+import ipaddress
 import json
 import random
 import uuid as uuid_lib
@@ -36,6 +37,49 @@ _FAKE_ID_BASE = {"nat": 81000, "acl": 82000, "vnet": 83000, "lb": 84000}
 
 def _row_to_dict(row) -> dict:
     return {k: row[k] for k in row.keys()}
+
+
+def vrf_subnet(env: dict, prefer_postfix: str = "North-South") -> str | None:
+    """Resolves one of the *real* host subnets Netris allocated to this
+    environment's VRF/VPC when the cluster was created — an ACL's
+    `dst_prefix` has to be one of these (not an arbitrary CIDR like
+    '0.0.0.0/0') for Netris to actually apply the rule, since it's scoped to
+    traffic addressed within the VRF. Confirmed against a real cluster: its
+    `resources.subnets` prefixes are exactly what a working ACL used as
+    `dst_prefix`.
+
+    Prefers the subnet backing the named vnet (default the customer-facing
+    'North-South' one, found by checking which resources.subnets prefix
+    contains that vnet's gateway address) and falls back to the first
+    subnet Netris allocated if that match can't be made. Returns None
+    before the cluster exists yet (nothing to resolve to)."""
+    raw = env.get("subnets_json")
+    if not raw:
+        return None
+    resources = json.loads(raw)
+    prefixes = [s["prefix"] for s in (resources.get("subnets") or resources.get("allocations") or []) if s.get("prefix")]
+    if not prefixes:
+        return None
+
+    for vnet in resources.get("vnets") or []:
+        if prefer_postfix.lower() not in (vnet.get("name") or "").lower():
+            continue
+        for gateway in vnet.get("ipv4Gateways") or []:
+            gw_prefix = gateway.get("prefix")
+            if not gw_prefix:
+                continue
+            try:
+                gw_ip = ipaddress.ip_interface(gw_prefix).ip
+            except ValueError:
+                continue
+            for prefix in prefixes:
+                try:
+                    if gw_ip in ipaddress.ip_network(prefix, strict=False):
+                        return prefix
+                except ValueError:
+                    continue
+
+    return prefixes[0]
 
 
 def get_environment(environment_id: int) -> dict:
@@ -159,12 +203,22 @@ async def create_now(environment_id: int, kind: str, local_id: str, client: Netr
                 environment_id=environment_id,
             )
         elif kind == "acl":
+            # An explicit dst_prefix is respected as-is; left blank, it
+            # resolves to this environment's own VRF-allocated subnet —
+            # see vrf_subnet's docstring for why that's required.
+            dst_prefix = cfg.get("dst_prefix") or vrf_subnet(env)
+            if not dst_prefix:
+                raise NetrisAPIError(
+                    "No VRF subnet available yet to use as the ACL destination — the environment's "
+                    "network fabric hasn't been confirmed by Netris yet."
+                )
             netris_id = await client.create_acl_rule(
                 name=cfg["name"], vpc_id=vpc_id, vpc_name=vpc_name, comment=cfg.get("comment", ""),
                 action=cfg.get("action", "permit"), proto=cfg.get("proto", "tcp"),
-                src_prefix=cfg.get("src_prefix", "0.0.0.0/0"), dst_prefix=cfg.get("dst_prefix", "0.0.0.0/0"),
+                src_prefix=cfg.get("src_prefix", "0.0.0.0/0"), dst_prefix=dst_prefix,
                 src_port_from=cfg.get("src_port_from"), src_port_to=cfg.get("src_port_to"),
                 dst_port_from=cfg.get("dst_port_from"), dst_port_to=cfg.get("dst_port_to"),
+                established=cfg.get("established", 1), reverse=cfg.get("reverse", "yes"),
                 environment_id=environment_id,
             )
         elif kind == "vnet":

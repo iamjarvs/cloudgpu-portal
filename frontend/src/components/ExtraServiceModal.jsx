@@ -46,6 +46,7 @@ export default function ExtraServiceModal({ kind, envName, initialConfig, onSave
               <input
                 id={`extra-${kind}-${field.key}`}
                 type={field.type === 'number' ? 'number' : 'text'}
+                placeholder={field.placeholder}
                 value={config[field.key] ?? ''}
                 onChange={(e) =>
                   setField(field.key, field.type === 'number' ? (e.target.value === '' ? null : Number(e.target.value)) : e.target.value)
