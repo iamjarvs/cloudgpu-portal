@@ -112,12 +112,20 @@ def get_settings_api(_: None = Depends(require_operator)):
     }
 
 
+
+# Fields that change *which account* the shared NetrisClient is
+# authenticated as — see NetrisClient.invalidate_session.
+_NETRIS_SESSION_FIELDS = {"netris_base_url", "netris_username", "netris_password", "netris_verify_ssl"}
+
+
 @router.put("/api/settings")
 def update_settings_api(payload: SettingsUpdate, request: Request, _: None = Depends(require_operator)):
     fields = payload.model_dump(exclude_unset=True)
     if "netris_verify_ssl" in fields and fields["netris_verify_ssl"] is not None:
         fields["netris_verify_ssl"] = int(fields["netris_verify_ssl"])
     updated = settings_store.update_settings(request.app.state.secret_box, **fields)
+    if _NETRIS_SESSION_FIELDS & fields.keys():
+        request.app.state.netris_client.invalidate_session()
     return {"ok": True, "updated_at": updated.updated_at}
 
 

@@ -64,6 +64,21 @@ class NetrisClient:
         self._tenant_id: int | None = None
         self._tenant_name: str | None = None
 
+    def invalidate_session(self) -> None:
+        """Called by /ops right after the operator changes the Netris
+        connection (base URL, username, password, or SSL verification) —
+        without this, an already-authenticated client has no reason to
+        re-login (only a 401 triggers that), so it would keep making calls
+        as whichever account it logged in as, silently ignoring the new
+        credentials until the process restarts. Also drops the cached admin
+        identity and tenant, both of which are tied to the account that was
+        logged in and must be re-derived under the new one."""
+        self._logged_in = False
+        self._admin_id = None
+        self._admin_name = None
+        self._tenant_id = None
+        self._tenant_name = None
+
     def _base_url(self) -> str:
         settings = settings_store.get_settings()
         if not settings.netris_base_url:
