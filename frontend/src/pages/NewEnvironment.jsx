@@ -5,7 +5,7 @@ import AppShell from '../components/AppShell'
 import Icon from '../components/Icon'
 import NetrisServicesMenu from '../components/NetrisServicesMenu'
 import ExtraServiceModal from '../components/ExtraServiceModal'
-import { EXTRA_META, defaultConfig, summarize } from '../netrisExtras'
+import { EXTRA_META, summarize } from '../netrisExtras'
 
 const INCLUDED_GROUPS = [
   {
@@ -55,7 +55,6 @@ export default function NewEnvironment() {
   const maxCount = capacity ? Math.max(1, Math.min(capacity.available_count, capacity.max_per_request)) : 1
   const gpusPerServer = capacity?.gpus_per_server ?? 8
   const totalGpus = serverCount * gpusPerServer
-  const natExtra = extrasList.find((x) => x.kind === 'nat')
 
   function addExtra(kind, config) {
     setExtrasList((prev) => [...prev, { id: `${kind}-${Date.now()}`, kind, config }])
@@ -65,13 +64,6 @@ export default function NewEnvironment() {
   }
   function removeExtra(id) {
     setExtrasList((prev) => prev.filter((x) => x.id !== id))
-  }
-  function toggleNat(checked) {
-    if (checked) {
-      addExtra('nat', defaultConfig('nat', name))
-    } else if (natExtra) {
-      removeExtra(natExtra.id)
-    }
   }
 
   async function handleSubmit(e) {
@@ -175,42 +167,29 @@ export default function NewEnvironment() {
           </div>
 
           <div className="net-services-panel">
-            <label className="toggle-row" style={{ margin: '0 0 0.3rem' }}>
-              <input type="checkbox" checked={!!natExtra} onChange={(e) => toggleNat(e.target.checked)} />
-              Add a NAT rule for this environment
-            </label>
-            {natExtra && (
-              <div className="extra-chip-inline">
-                <span className="mono small">{summarize('nat', natExtra.config)}</span>
-                <button type="button" className="btn-ghost" onClick={() => setEditingExtra(natExtra.id)}>
-                  Edit
-                </button>
-              </div>
-            )}
-
-            <div className="panel-header-row" style={{ marginTop: '1rem' }}>
+            <div className="panel-header-row">
               <span className="hint" style={{ margin: 0 }}>
-                Other Netris services (Softgate ACLs, V-Nets, load balancing)
+                Netris services — NAT rules, Softgate ACLs, V-Nets, load balancing
               </span>
               <NetrisServicesMenu envName={name} onAdd={addExtra} />
             </div>
-            {extrasList.filter((x) => x.kind !== 'nat').length > 0 && (
+            {extrasList.length > 0 && (
               <ul className="extra-chip-list">
-                {extrasList
-                  .filter((x) => x.kind !== 'nat')
-                  .map((x) => (
-                    <li key={x.id} className="extra-chip">
+                {extrasList.map((x) => (
+                  <li key={x.id} className="extra-chip">
+                    <span className="extra-chip-icon">
                       <Icon name={EXTRA_META[x.kind].icon} size={14} />
-                      <span>{EXTRA_META[x.kind].short}</span>
-                      <span className="mono small extra-chip-summary">{summarize(x.kind, x.config)}</span>
-                      <button type="button" className="btn-ghost" onClick={() => setEditingExtra(x.id)}>
-                        Edit
-                      </button>
-                      <button type="button" className="btn-ghost" onClick={() => removeExtra(x.id)}>
-                        <Icon name="x" size={13} />
-                      </button>
-                    </li>
-                  ))}
+                    </span>
+                    <span className="extra-chip-kind">{EXTRA_META[x.kind].short}</span>
+                    <span className="mono small extra-chip-summary">{summarize(x.kind, x.config)}</span>
+                    <button type="button" className="btn-ghost" onClick={() => setEditingExtra(x.id)}>
+                      Edit
+                    </button>
+                    <button type="button" className="btn-ghost" onClick={() => removeExtra(x.id)}>
+                      <Icon name="x" size={13} />
+                    </button>
+                  </li>
+                ))}
               </ul>
             )}
           </div>
