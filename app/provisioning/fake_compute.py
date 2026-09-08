@@ -21,8 +21,10 @@ STEPS = [
     "Finalizing",
 ]
 
-_MIN_STEP_SECONDS = 5.0
-_MAX_STEP_SECONDS = 6.5
+# 6 steps * [3.2, 3.8] always lands the total between 19.2s and 22.8s —
+# comfortably inside the requested 19-23s window regardless of per-step draw.
+_MIN_STEP_SECONDS = 3.2
+_MAX_STEP_SECONDS = 3.8
 
 
 @dataclass

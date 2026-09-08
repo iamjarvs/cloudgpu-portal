@@ -62,6 +62,14 @@ export default function EnvironmentDetail() {
     return () => clearInterval(interval)
   }, [env, load])
 
+  // Real environments keep the deployment console (diagram, checklist,
+  // console log) visible permanently once deployed, not just while
+  // actively provisioning — it's the record of how the environment came
+  // up, and it should still be there if you navigate back to it later.
+  // Dummy environments never provisioned through this UI in the first
+  // place (seeded straight to 'active'), so they never show it.
+  const showDeploymentConsole = !!env && env.kind === 'real' && (CHECKLIST_STATUSES.has(env.status) || env.status === 'active')
+
   const currentIndex = env ? COMPUTE_STEPS.indexOf(env.status_detail) : -1
   const logLines = useMemo(() => {
     if (!env) return []
@@ -155,7 +163,7 @@ export default function EnvironmentDetail() {
         </div>
       )}
 
-      {CHECKLIST_STATUSES.has(env.status) && (
+      {showDeploymentConsole && (
         <section className="panel">
           <div className="panel-header-row">
             <h2>Deployment console</h2>
