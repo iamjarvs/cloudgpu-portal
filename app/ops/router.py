@@ -118,6 +118,43 @@ def get_settings_api(_: None = Depends(require_operator)):
 _NETRIS_SESSION_FIELDS = {"netris_base_url", "netris_username", "netris_password", "netris_verify_ssl"}
 
 
+@router.get("/api/device-credentials")
+def device_credentials(request: Request, _: None = Depends(require_operator)):
+    """Plaintext Netris + SSH jump-host credentials, for bootstrapping the
+    Meridian demo console onto a compute host at install time. Unlike
+    /api/settings above, this intentionally returns decrypted secrets — the
+    console authenticates to Netris and the jump host directly, the same way
+    this app's own netris_client/ssh_client do internally, rather than
+    proxying every lookup back through this Portal at runtime. Gated by the
+    same operator Basic Auth as everything else under /ops; there is no
+    narrower credential for this on purpose (see the device-console plan).
+    """
+    settings = settings_store.get_settings()
+    secret_box = request.app.state.secret_box
+    netris_password = (
+        secret_box.decrypt(settings.netris_password_encrypted)
+        if settings.netris_password_encrypted
+        else None
+    )
+    ssh_jump_password = (
+        secret_box.decrypt(settings.ssh_jump_password_encrypted)
+        if settings.ssh_jump_password_encrypted
+        else None
+    )
+    return {
+        "netris_base_url": settings.netris_base_url,
+        "netris_username": settings.netris_username,
+        "netris_password": netris_password,
+        "netris_verify_ssl": bool(settings.netris_verify_ssl),
+        "ssh_jump_host": settings.ssh_jump_host,
+        "ssh_jump_port": settings.ssh_jump_port,
+        "ssh_jump_username": settings.ssh_jump_username,
+        "ssh_jump_password": ssh_jump_password,
+        "tenant_display_name": settings.tenant_display_name,
+        "gpus_per_server": settings.gpus_per_server,
+    }
+
+
 @router.put("/api/settings")
 def update_settings_api(payload: SettingsUpdate, request: Request, _: None = Depends(require_operator)):
     fields = payload.model_dump(exclude_unset=True)
