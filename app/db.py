@@ -115,6 +115,7 @@ _COLUMN_MIGRATIONS: list[tuple[str, str, str]] = [
     ("app_settings", "ssh_jump_username", "TEXT"),
     ("app_settings", "ssh_jump_password_encrypted", "TEXT"),
     ("app_settings", "demo_app_port", "INTEGER NOT NULL DEFAULT 8080"),
+    ("environments", "netris_extras_json", "TEXT"),
 ]
 
 

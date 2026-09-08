@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from app import db, settings_store, ssh_client
 from app.netris.client import NetrisClient
 from app.netris.exceptions import NetrisAPIError, NetrisAuthError, NetrisCapacityError
-from app.provisioning import fake_compute
+from app.provisioning import extras, fake_compute
 from app.provisioning import state_machine as sm
 from app.security import SecretBox
 
@@ -204,6 +204,7 @@ async def _run_real_netris_flow(
 
         if cluster is not None:
             _store_cluster_snapshot(environment_id, cluster)
+            await extras.create_all_pending(environment_id, client, settings)
             status_value = (cluster.get("status") or {}).get("value") or cluster.get("state")
             status_label = (cluster.get("status") or {}).get("label")
             if status_value in NETRIS_TERMINAL_SUCCESS:

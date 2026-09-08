@@ -29,8 +29,8 @@ export const api = {
 
   listEnvironments: () => request('/api/environments'),
   capacity: () => request('/api/environments/capacity'),
-  createEnvironment: (name, server_count) =>
-    request('/api/environments', { method: 'POST', body: JSON.stringify({ name, server_count }) }),
+  createEnvironment: (name, server_count, extras = []) =>
+    request('/api/environments', { method: 'POST', body: JSON.stringify({ name, server_count, extras }) }),
   getEnvironment: (uuid) => request(`/api/environments/${uuid}`),
   getEnvironmentEvents: (uuid) => request(`/api/environments/${uuid}/events`),
   deleteEnvironment: (uuid) => request(`/api/environments/${uuid}`, { method: 'DELETE' }),
@@ -38,4 +38,9 @@ export const api = {
   dismissDelete: (uuid) => request(`/api/environments/${uuid}/dismiss-delete`, { method: 'POST' }),
   testConnectivity: (uuid, serverId) =>
     request(`/api/environments/${uuid}/connectivity-test/${serverId}`, { method: 'POST' }),
+
+  addExtra: (uuid, kind, config) =>
+    request(`/api/environments/${uuid}/extras/${kind}`, { method: 'POST', body: JSON.stringify({ config }) }),
+  deleteExtra: (uuid, kind, localId) =>
+    request(`/api/environments/${uuid}/extras/${kind}/${localId}`, { method: 'DELETE' }),
 }

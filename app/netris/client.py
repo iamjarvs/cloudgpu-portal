@@ -61,6 +61,8 @@ class NetrisClient:
         self._logged_in = False
         self._admin_id: int | None = None
         self._admin_name: str | None = None
+        self._tenant_id: int | None = None
+        self._tenant_name: str | None = None
 
     def _base_url(self) -> str:
         settings = settings_store.get_settings()
@@ -107,6 +109,24 @@ class NetrisClient:
         if not self._logged_in:
             await self._login()
         return self._admin_id, self._admin_name
+
+    async def get_default_tenant(self, *, environment_id: int | None = None) -> tuple[int, str]:
+        """V-Net creation requires an owning tenant, which nothing else in
+        this app currently tracks. Fetched once (GET /api/tenants, a v1
+        endpoint that returns a bare array) and cached on this client for
+        its lifetime — preferring 'adminTenant' since that's the tenant the
+        seeded operator/customer credentials are expected to belong to."""
+        if self._tenant_id is not None:
+            return self._tenant_id, self._tenant_name
+        resp = await self._request("GET", "/api/tenants", environment_id=environment_id, action="List tenants")
+        if resp.status_code >= 400:
+            raise NetrisAPIError(f"List tenants failed (HTTP {resp.status_code}).", resp.status_code)
+        tenants = resp.json() or []
+        if not tenants:
+            raise NetrisAPIError("No tenants available on this Netris controller.", resp.status_code)
+        tenant = next((t for t in tenants if t.get("name") == "adminTenant"), tenants[0])
+        self._tenant_id, self._tenant_name = tenant["id"], tenant["name"]
+        return self._tenant_id, self._tenant_name
 
     def _log_call(
         self,
@@ -251,3 +271,199 @@ class NetrisClient:
                 f"Delete failed (HTTP {resp.status_code}) — endpoint may not match the live controller.",
                 resp.status_code,
             )
+
+    # ---------- NAT rules (POST/DELETE /api/v2/nat) ----------
+
+    async def create_nat_rule(
+        self,
+        *,
+        name: str,
+        site_id: int,
+        site_name: str,
+        vpc_id: int,
+        vpc_name: str,
+        state: str = "enabled",
+        action: str = "DNAT",
+        protocol: str = "all",
+        source_address: str = "0.0.0.0/0",
+        source_port: str = "1-65535",
+        destination_address: str,
+        destination_port: str = "",
+        dnat_to_ip: str = "",
+        dnat_to_port: str = "",
+        comment: str = "",
+        pool: bool = True,
+        port_group: str = "",
+        environment_id: int | None = None,
+    ) -> int:
+        body = {
+            "name": name,
+            "site": {"id": site_id, "name": site_name},
+            "vpc": {"id": vpc_id, "name": vpc_name},
+            "state": state,
+            "action": action,
+            "protocol": protocol,
+            "sourceAddress": source_address,
+            "sourcePort": source_port,
+            "destinationAddress": destination_address,
+            "destinationPort": destination_port,
+            "dnatToIP": dnat_to_ip,
+            "dnatToPort": dnat_to_port,
+            "comment": comment,
+            "pool": pool,
+            "portGroup": port_group,
+        }
+        resp = await self._request(
+            "POST", "/api/v2/nat", environment_id=environment_id, action="Create NAT rule", json=body
+        )
+        payload = _check_success(resp, "Create NAT rule")
+        return (payload.get("data") or {}).get("id")
+
+    async def delete_nat_rule(self, nat_id: int, *, environment_id: int | None = None) -> None:
+        resp = await self._request(
+            "DELETE", f"/api/v2/nat/{nat_id}", environment_id=environment_id, action="Delete NAT rule"
+        )
+        _check_success(resp, "Delete NAT rule")
+
+    # ---------- ACL rules (POST/DELETE /api/acl — a v1 endpoint, no /v2 prefix) ----------
+
+    async def create_acl_rule(
+        self,
+        *,
+        name: str,
+        vpc_id: int | None,
+        vpc_name: str | None,
+        comment: str = "",
+        action: str = "permit",
+        proto: str = "tcp",
+        src_prefix: str = "0.0.0.0/0",
+        dst_prefix: str = "0.0.0.0/0",
+        src_port_from: int | None = None,
+        src_port_to: int | None = None,
+        dst_port_from: int | None = None,
+        dst_port_to: int | None = None,
+        established: int = 0,
+        environment_id: int | None = None,
+    ) -> int:
+        body = {
+            "name": name,
+            "vpc": {"id": vpc_id, "name": vpc_name} if vpc_id else None,
+            "comment": comment,
+            "action": action,
+            "proto": proto,
+            "src_prefix": src_prefix,
+            "dst_prefix": dst_prefix,
+            "src_port_from": src_port_from,
+            "src_port_to": src_port_to,
+            "src_port_group": None,
+            "dst_port_from": dst_port_from,
+            "dst_port_to": dst_port_to,
+            "dst_port_group": None,
+            "established": established,
+            "reverse": "no",
+        }
+        resp = await self._request(
+            "POST", "/api/acl", environment_id=environment_id, action="Create ACL rule", json=body
+        )
+        payload = _check_success(resp, "Create ACL rule")
+        return (payload.get("data") or {}).get("id")
+
+    async def delete_acl_rule(self, acl_id: int, *, environment_id: int | None = None) -> None:
+        resp = await self._request(
+            "DELETE", "/api/acl", environment_id=environment_id, action="Delete ACL rule", json={"id": [acl_id]}
+        )
+        _check_success(resp, "Delete ACL rule")
+
+    # ---------- V-Nets (POST/DELETE /api/v2/vnet) ----------
+
+    async def create_vnet(
+        self,
+        *,
+        name: str,
+        tenant_id: int,
+        tenant_name: str,
+        site_id: int,
+        site_name: str,
+        vpc_id: int | None,
+        vpc_name: str | None,
+        vlan: str | int = "auto",
+        state: str = "active",
+        ip_family: str = "dual",
+        gateways: list[dict] | None = None,
+        environment_id: int | None = None,
+    ) -> int:
+        body = {
+            "name": name,
+            "tenant": {"id": tenant_id, "name": tenant_name},
+            "sites": [{"id": site_id, "name": site_name}],
+            "vpc": {"id": vpc_id, "name": vpc_name} if vpc_id else None,
+            "vlan": vlan,
+            "state": state,
+            "ipFamily": ip_family,
+            "gateways": gateways or [],
+        }
+        resp = await self._request(
+            "POST", "/api/v2/vnet", environment_id=environment_id, action="Create V-Net", json=body
+        )
+        payload = _check_success(resp, "Create V-Net")
+        # vnetResAddBody wraps the new id in a one-element array, unlike every other create call here.
+        data = payload.get("data")
+        if isinstance(data, list):
+            return (data[0] or {}).get("id") if data else None
+        return (data or {}).get("id")
+
+    async def delete_vnet(self, vnet_id: int, *, environment_id: int | None = None) -> None:
+        resp = await self._request(
+            "DELETE", f"/api/v2/vnet/{vnet_id}", environment_id=environment_id, action="Delete V-Net"
+        )
+        _check_success(resp, "Delete V-Net")
+
+    # ---------- L4 load balancers (POST/DELETE /api/v2/l4lb) ----------
+
+    async def create_load_balancer(
+        self,
+        *,
+        name: str,
+        description: str = "",
+        site_id: int,
+        site_name: str,
+        vpc_id: int | None,
+        vpc_name: str | None,
+        protocol: str = "TCP",
+        ip_family: str = "IPv4",
+        ip: str,
+        port: int,
+        status: str = "enable",
+        health_check: str = "TCP",
+        timeout: int = 1000,
+        request_path: str = "",
+        backend: list[dict] | None = None,
+        environment_id: int | None = None,
+    ) -> int:
+        body = {
+            "name": name,
+            "description": description,
+            "vpc": {"id": vpc_id, "name": vpc_name} if vpc_id else None,
+            "site": {"id": site_id, "name": site_name},
+            "protocol": protocol,
+            "automatic": True,
+            "ipFamily": ip_family,
+            "ip": ip,
+            "port": port,
+            "status": status,
+            "healthCheck": health_check,
+            "timeOut": timeout,
+            "requestPath": request_path,
+            "backend": backend or [],
+        }
+        resp = await self._request(
+            "POST", "/api/v2/l4lb", environment_id=environment_id, action="Create load balancer", json=body
+        )
+        payload = _check_success(resp, "Create load balancer")
+        return (payload.get("data") or {}).get("id")
+
+    async def delete_load_balancer(self, lb_id: int, *, environment_id: int | None = None) -> None:
+        resp = await self._request(
+            "DELETE", f"/api/v2/l4lb/{lb_id}", environment_id=environment_id, action="Delete load balancer"
+        )
+        _check_success(resp, "Delete load balancer")

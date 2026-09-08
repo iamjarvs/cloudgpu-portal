@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from app import db, settings_store, ssh_client
 from app.deps import require_customer_session
 from app.netris.exceptions import NetrisAPIError, NetrisAuthError
-from app.provisioning import delete_flow, fake_compute
+from app.provisioning import delete_flow, extras, fake_compute
 from app.provisioning import state_machine as sm
 from datetime import datetime
 
@@ -22,9 +22,19 @@ router = APIRouter(
 )
 
 
+class ExtraServiceInput(BaseModel):
+    kind: str
+    config: dict
+
+
 class CreateEnvironmentRequest(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     server_count: int = Field(ge=1)
+    extras: list[ExtraServiceInput] = Field(default_factory=list)
+
+
+class ExtraServiceRequest(BaseModel):
+    config: dict
 
 
 def _row_to_dict(row) -> dict:
@@ -68,6 +78,7 @@ def _public_environment(row: dict) -> dict:
         "servers": json.loads(row["servers_json"]) if row["servers_json"] else [],
         "subnets": json.loads(row["subnets_json"]) if row["subnets_json"] else {},
         "netris_delete_confirmed": row["netris_delete_confirmed"],
+        "extras": extras.list_extras(row["id"]),
         "compute_progress_pct": progress["pct"],
         "compute_elapsed_seconds": progress["elapsed_seconds"],
         "compute_total_seconds": progress["total_seconds"],
@@ -128,8 +139,12 @@ async def create_environment(payload: CreateEnvironmentRequest, request: Request
         (env_uuid, payload.name.strip(), netris_name, payload.server_count, settings.gpus_per_server, sm.QUEUED, now, now),
     )
     row = _get_row(env_uuid)
+    for extra in payload.extras:
+        if extra.kind not in extras.KINDS or not (extra.config or {}).get("name"):
+            continue
+        extras.add_pending(row["id"], extra.kind, extra.config)
     request.app.state.task_manager.start_provisioning(row["id"])
-    return _public_environment(row)
+    return _public_environment(_get_row(env_uuid))
 
 
 @router.get("/{env_uuid}")
@@ -175,6 +190,44 @@ async def connectivity_test(env_uuid: str, server_id: int, request: Request):
         return await ssh_client.test_connectivity(request.app.state.secret_box, source, targets)
     except ssh_client.ConnectivityTestError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.post("/{env_uuid}/extras/{kind}", status_code=201)
+async def add_extra(env_uuid: str, kind: str, payload: ExtraServiceRequest, request: Request):
+    if kind not in extras.KINDS:
+        raise HTTPException(status_code=404, detail="Unknown Netris service type")
+    if not (payload.config or {}).get("name"):
+        raise HTTPException(status_code=400, detail="name is required")
+    env = _get_row(env_uuid)
+    item = extras.add_pending(env["id"], kind, payload.config)
+    if env["kind"] == "dummy":
+        extras.mark_created_fake(env["id"], kind, item["local_id"])
+    elif env["netris_vpc_id"] is not None:
+        # create_now catches Netris errors itself and records the item as
+        # failed rather than raising — surfaced via the extras list, not a 5xx.
+        settings = settings_store.get_settings()
+        await extras.create_now(env["id"], kind, item["local_id"], request.app.state.netris_client, settings)
+    # else: environment doesn't have a VPC yet — stays pending, the
+    # provisioning poll loop picks it up once one is assigned.
+    return _public_environment(_get_row(env_uuid))
+
+
+@router.delete("/{env_uuid}/extras/{kind}/{local_id}")
+async def remove_extra(env_uuid: str, kind: str, local_id: str, request: Request):
+    if kind not in extras.KINDS:
+        raise HTTPException(status_code=404, detail="Unknown Netris service type")
+    env = _get_row(env_uuid)
+    item = extras.find(env["id"], kind, local_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    if item["netris_id"] is not None and env["kind"] == "real":
+        try:
+            await extras.delete_now(env["id"], kind, local_id, request.app.state.netris_client)
+        except (NetrisAuthError, NetrisAPIError) as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+    else:
+        extras.remove(env["id"], kind, local_id)
+    return _public_environment(_get_row(env_uuid))
 
 
 @router.delete("/{env_uuid}")

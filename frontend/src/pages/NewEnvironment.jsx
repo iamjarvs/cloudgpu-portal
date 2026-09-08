@@ -3,6 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import AppShell from '../components/AppShell'
 import Icon from '../components/Icon'
+import NetrisServicesMenu from '../components/NetrisServicesMenu'
+import ExtraServiceModal from '../components/ExtraServiceModal'
+import { EXTRA_META, defaultConfig, summarize } from '../netrisExtras'
 
 const INCLUDED_GROUPS = [
   {
@@ -41,6 +44,8 @@ export default function NewEnvironment() {
   const [capacity, setCapacity] = useState(null)
   const [error, setError] = useState(null)
   const [submitting, setSubmitting] = useState(false)
+  const [extrasList, setExtrasList] = useState([])
+  const [editingExtra, setEditingExtra] = useState(null) // { id, kind } | null
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -50,13 +55,32 @@ export default function NewEnvironment() {
   const maxCount = capacity ? Math.max(1, Math.min(capacity.available_count, capacity.max_per_request)) : 1
   const gpusPerServer = capacity?.gpus_per_server ?? 8
   const totalGpus = serverCount * gpusPerServer
+  const natExtra = extrasList.find((x) => x.kind === 'nat')
+
+  function addExtra(kind, config) {
+    setExtrasList((prev) => [...prev, { id: `${kind}-${Date.now()}`, kind, config }])
+  }
+  function updateExtra(id, config) {
+    setExtrasList((prev) => prev.map((x) => (x.id === id ? { ...x, config } : x)))
+  }
+  function removeExtra(id) {
+    setExtrasList((prev) => prev.filter((x) => x.id !== id))
+  }
+  function toggleNat(checked) {
+    if (checked) {
+      addExtra('nat', defaultConfig('nat', name))
+    } else if (natExtra) {
+      removeExtra(natExtra.id)
+    }
+  }
 
   async function handleSubmit(e) {
     e.preventDefault()
     setError(null)
     setSubmitting(true)
     try {
-      const env = await api.createEnvironment(name.trim(), serverCount)
+      const payload = extrasList.map((x) => ({ kind: x.kind, config: x.config }))
+      const env = await api.createEnvironment(name.trim(), serverCount, payload)
       navigate(`/environments/${env.uuid}`)
     } catch (err) {
       setError(err.message)
@@ -150,12 +174,71 @@ export default function NewEnvironment() {
             </div>
           </div>
 
+          <div className="net-services-panel">
+            <label className="toggle-row" style={{ margin: '0 0 0.3rem' }}>
+              <input type="checkbox" checked={!!natExtra} onChange={(e) => toggleNat(e.target.checked)} />
+              Add a NAT rule for this environment
+            </label>
+            {natExtra && (
+              <div className="extra-chip-inline">
+                <span className="mono small">{summarize('nat', natExtra.config)}</span>
+                <button type="button" className="btn-ghost" onClick={() => setEditingExtra(natExtra.id)}>
+                  Edit
+                </button>
+              </div>
+            )}
+
+            <div className="panel-header-row" style={{ marginTop: '1rem' }}>
+              <span className="hint" style={{ margin: 0 }}>
+                Other Netris services (Softgate ACLs, V-Nets, load balancing)
+              </span>
+              <NetrisServicesMenu envName={name} onAdd={addExtra} />
+            </div>
+            {extrasList.filter((x) => x.kind !== 'nat').length > 0 && (
+              <ul className="extra-chip-list">
+                {extrasList
+                  .filter((x) => x.kind !== 'nat')
+                  .map((x) => (
+                    <li key={x.id} className="extra-chip">
+                      <Icon name={EXTRA_META[x.kind].icon} size={14} />
+                      <span>{EXTRA_META[x.kind].short}</span>
+                      <span className="mono small extra-chip-summary">{summarize(x.kind, x.config)}</span>
+                      <button type="button" className="btn-ghost" onClick={() => setEditingExtra(x.id)}>
+                        Edit
+                      </button>
+                      <button type="button" className="btn-ghost" onClick={() => removeExtra(x.id)}>
+                        <Icon name="x" size={13} />
+                      </button>
+                    </li>
+                  ))}
+              </ul>
+            )}
+          </div>
+
           {error && <div className="form-error">{error}</div>}
           <button type="submit" className="btn-primary" disabled={submitting || !capacity?.configured}>
             {submitting ? 'Deploying…' : 'Deploy environment'}
           </button>
         </form>
       </div>
+
+      {editingExtra &&
+        (() => {
+          const item = extrasList.find((x) => x.id === editingExtra)
+          if (!item) return null
+          return (
+            <ExtraServiceModal
+              kind={item.kind}
+              envName={name}
+              initialConfig={item.config}
+              onClose={() => setEditingExtra(null)}
+              onSave={(config) => {
+                updateExtra(item.id, config)
+                setEditingExtra(null)
+              }}
+            />
+          )
+        })()}
     </AppShell>
   )
 }

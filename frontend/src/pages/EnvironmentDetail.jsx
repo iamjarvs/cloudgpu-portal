@@ -5,37 +5,9 @@ import AppShell from '../components/AppShell'
 import StatusPill from '../components/StatusPill'
 import EventLogPanel from '../components/EventLogPanel'
 import ConnectivityCard from '../components/ConnectivityCard'
-
-const COMPUTE_STEPS = [
-  'Allocating bare-metal capacity',
-  'Provisioning Kubernetes control plane',
-  'Bootstrapping worker nodes & GPU drivers',
-  'Configuring container runtime & storage',
-  'Establishing tenant network fabric',
-  'Finalizing',
-]
-
-const STEP_LOGS = [
-  ['Querying available capacity at Datacenter-A…', 'Reserving bare-metal server(s)…', 'Capacity reserved.'],
-  [
-    'Bootstrapping etcd cluster…',
-    'Starting kube-apiserver, kube-scheduler, kube-controller-manager…',
-    'Control plane healthy (3/3 nodes ready).',
-  ],
-  [
-    'Installing NVIDIA driver 550.90.07…',
-    'Installing CUDA 12.4 runtime + NCCL 2.20…',
-    'Joining worker nodes to cluster…',
-    'GPU devices detected and schedulable.',
-  ],
-  ['Installing containerd runtime…', 'Provisioning local NVMe scratch volumes…', 'Storage mounted and verified.'],
-  [
-    'Requesting isolated VPC from Netris controller…',
-    'Allocating VLAN segments (North-South, OOB-Management)…',
-    'Waiting for Netris to confirm network state…',
-  ],
-  ['Running post-provision health checks…', 'Registering environment with monitoring agent…', 'Finalizing…'],
-]
+import DeploymentDiagram from '../components/DeploymentDiagram'
+import ExtraServicesPanel from '../components/ExtraServicesPanel'
+import { COMPUTE_STEPS, STEP_LOGS } from '../deploymentSteps'
 
 const NON_TERMINAL = new Set(['queued', 'provisioning_compute', 'awaiting_network', 'stalled', 'deleting'])
 const CHECKLIST_STATUSES = new Set(['queued', 'provisioning_compute', 'awaiting_network', 'stalled'])
@@ -194,6 +166,7 @@ export default function EnvironmentDetail() {
           <div className="progress-bar">
             <div className="progress-bar-fill" style={{ width: `${env.compute_progress_pct}%` }} />
           </div>
+          <DeploymentDiagram env={env} />
           <div className="console-grid">
             <ul className="checklist">
               {COMPUTE_STEPS.map((step, i) => {
@@ -259,6 +232,8 @@ export default function EnvironmentDetail() {
           </div>
         )}
       </section>
+
+      <ExtraServicesPanel env={env} onChange={setEnv} />
 
       {connectivityRun !== null && (
         <section className="panel">

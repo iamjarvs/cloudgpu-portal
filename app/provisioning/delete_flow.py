@@ -11,6 +11,7 @@ import logging
 from app import db, ssh_client
 from app.netris.client import NetrisClient
 from app.netris.exceptions import NetrisAPIError, NetrisAuthError
+from app.provisioning import extras
 from app.provisioning import state_machine as sm
 from app.security import SecretBox
 
@@ -59,6 +60,21 @@ async def real_delete(environment_id: int, client: NetrisClient, secret_box: Sec
     if env["servers_json"]:
         servers = json.loads(env["servers_json"])
         asyncio.create_task(ssh_client.uninstall_demo_app(secret_box, servers))
+
+    # Best-effort — a stray leftover NAT/ACL/V-Net/LB must never block
+    # tearing down the environment itself. Failures are logged, not raised.
+    extra_data = extras.list_extras(environment_id)
+    for kind in extras.KINDS:
+        for item in extra_data[kind]:
+            if item["netris_id"] is None:
+                continue
+            try:
+                await extras.delete_now(environment_id, kind, item["local_id"], client)
+            except (NetrisAuthError, NetrisAPIError) as exc:
+                sm.log_event(
+                    environment_id, "error",
+                    message=f"Failed to delete {extras.KIND_LABELS[kind]} '{item['config'].get('name')}': {exc}",
+                )
 
     if env["netris_cluster_id"] is None:
         # Never got as far as being created in Netris — safe to just drop it.
